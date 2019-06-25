@@ -1,20 +1,30 @@
 import glob
 import time
 import serial
+from util import hex_string
 from platform import uname
 from pygame import mixer
 
 IS_WINDOWS = uname()[0] == 'Windows'
 
+PRO_MICRO_PID = 0x9206
+
+print('Opening USB serial port...')
+
 if IS_WINDOWS:
-    print('Running Windows; not parsing serial.')
+    import serial.tools.list_ports as list_ports
+    port_info = list_ports.comports()
+    for info in port_info:
+        if info.pid == PRO_MICRO_PID:
+            port_string = info.device
 else:
-    print('Opening USB serial port...')
-    try:
-        port = serial.Serial('/dev/ttyACM0', baudrate=9600, timeout=5)
-    except:
-        print('Could not open port... check USB?')
-        exit(-1)
+    port_string = '/dev/ttyACM0'
+
+try:
+    port = serial.Serial(port_string, baudrate=9600, timeout=5)
+except:
+    print('Could not open port... check USB?')
+    port = None
 
 print('Locating tracks...')
 
@@ -55,7 +65,7 @@ while True:
             channel.play(sound)
         start = time.time()
 
-    if IS_WINDOWS:
+    if port is None:
         continue
 
     # Quick and dirty - never use a newline (\n) on Arduino side
@@ -66,9 +76,10 @@ while True:
         print('No volume updates received')
         continue
 
+    bites = bytearray(bites)
     channel_num = bites[0]
     volume_byte = bites[1]
     if channel_num < len(channels):
         channels[channel_num].set_volume(volume_byte / 255.0)
     else:
-        print('Invalid track byte received!')
+        print('Invalid track byte received! (%s)' % hex_string(bites))

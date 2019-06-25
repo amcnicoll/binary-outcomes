@@ -1,0 +1,14 @@
+[Unit]
+Description=Binary Outcomes Python Script
+After=network.target
+
+[Service]
+ExecStart=/usr/bin/python3 -u main.py
+WorkingDirectory=/home/pi/binary-outcomes/python
+StandardOutput=inherit
+StandardError=inherit
+Restart=always
+User=pi
+
+[Install]
+WantedBy=multi-user.target

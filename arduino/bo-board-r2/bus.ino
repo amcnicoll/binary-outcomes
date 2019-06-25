@@ -20,10 +20,8 @@ void bus_init(void) {
   pinMode(DE_PIN, OUTPUT);
   pinMode(NRE_PIN, OUTPUT);
 
-  // Configure bus digital pins
+  // Configure bus pin
   pinMode(BUS_IO_PIN, INPUT_PULLUP);
-  pinMode(LEFT_IO_PIN, INPUT);
-  pinMode(RIGHT_IO_PIN, INPUT);
 
   // Release bus and set RX
   pinMode(BUS_IO_PIN, INPUT_PULLUP);
@@ -49,6 +47,10 @@ void bus_thread(struct pt *pt) {
   static uint32_t last = 0;
   
   PT_BEGIN(pt);
+
+  // Initialize bus
+  bus_init();
+  
   while (1) {
 
     // Do we have something to send?
@@ -58,7 +60,6 @@ void bus_thread(struct pt *pt) {
       PT_WAIT_UNTIL(pt, digitalRead(BUS_IO_PIN) == HIGH);
 
       // Claim bus
-      // TODO - Stagger claim attempt by address
       pinMode(BUS_IO_PIN, OUTPUT);
       digitalWrite(BUS_IO_PIN, LOW);
 

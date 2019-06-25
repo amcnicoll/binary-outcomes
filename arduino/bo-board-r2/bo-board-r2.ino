@@ -5,9 +5,13 @@
 #include "Adafruit_MPL115A2.h"
 #include "Adafruit_BMP280.h"
 
+//#define SYNAPSE
+//#define CAMPFIRE
+#define SPEAKERS
+
 state_t state;
 
-static struct pt test_thread_pt, app_thread_pt, bus_thread_pt;
+static struct pt app_thread_pt, bus_thread_pt;
 
 void setup() {
 
@@ -22,74 +26,45 @@ void setup() {
   analogWrite(LOAD1_CTRL_PIN, 0);
   analogWrite(LOAD2_CTRL_PIN, 0);
 
-  // Initialize bus
-  //bus_init();
+  // Initialize pairwise to inputs, pulled up
+  pinMode(LEFT_IO_PIN,  INPUT_PULLUP);
+  pinMode(RIGHT_IO_PIN, INPUT_PULLUP);
 
   // Initialize state
-  state.address       = 0;
-  state.pressure      = 0;
-  state.activated     = 0;
-  state.ch_a_target   = 0;
-  state.ch_a_current  = 0;
-  state.ch_b_target   = 0;
-  state.ch_b_current  = 0;
-  state.synapse_on_time = 0;
-  state.synapse_off_time = 0;
-  state.synapse_leftward = 0;
+  state.address           = 0;
+  state.pressure          = 0;
+  state.activated         = 0;
+  state.ch_a_target       = 0;
+  state.ch_a_current      = 0;
+  state.ch_b_target       = 0;
+  state.ch_b_current      = 0;
+  state.synapse_on_time   = 0;
+  state.synapse_off_time  = 0;
+  state.synapse_leftward  = 0;
   state.synapse_rightward = 0;
 
   // Initialize threads
-  PT_INIT(&test_thread_pt);
   PT_INIT(&app_thread_pt);
   PT_INIT(&bus_thread_pt);
 }
 
 void loop() {
 
-  // Service test thread
-  //test_thread(&test_thread_pt);
-
-  // Service synapse app thread
-  //app_synapse(&app_thread_pt);
-  //update_hardware();
-  
-  // Service campfire app thread
+  // Service app thread
+  #ifdef SYNAPSE
+  app_synapse(&app_thread_pt);
+  #endif
+  #ifdef CAMPFIRE
   app_campfire(&app_thread_pt);
+  #endif
+  #ifdef SPEAKERS
+  app_speakers(&app_thread_pt);
+  #endif
 
-  // Run bus thread
-  // bus_thread(&bus_thread_pt);
-}
-
-void test_thread(struct pt *pt) {
-
-  static uint32_t last = 0;
-  static uint8_t  test_buffer[4] = {'o', 'h', 'a', 'i'};
-  
-  PT_BEGIN(pt);
-  while (1) {
-
-    // Run every 100ms
-    PT_WAIT_UNTIL(pt, millis() > (last + 100));
-    last = millis();
-
-    // Invert state
-    state.activated = !state.activated;
-
-    // Transmit on bus
-    bus_tx(test_buffer, 4);
-    
-  }
-  PT_END(pt);
-}
-
-void app_sniffer(struct pt *pt) {
-  PT_BEGIN(pt);
-  while (1) {
-    
-    PT_YIELD(pt);
-    
-  }
-  PT_END(pt);
+  // Service bus thread
+  #ifdef SPEAKERS
+  bus_thread(&bus_thread_pt);
+  #endif
 }
 
 void app_synapse(struct pt *pt) {
@@ -114,10 +89,6 @@ void app_synapse(struct pt *pt) {
                   Adafruit_BMP280::STANDBY_MS_500); /* Standby time. */
   
   avg_pressure = sensor.readPressure();
-
-  // Initialize pairwise to inputs, pulled up
-  pinMode(LEFT_IO_PIN,  INPUT_PULLUP);
-  pinMode(RIGHT_IO_PIN, INPUT_PULLUP);
   
   while (1) {
 
@@ -202,6 +173,10 @@ void app_synapse(struct pt *pt) {
     // Mirror channels
     state.ch_b_current = state.ch_a_current;
 
+    // Actualize current PWM channels
+    analogWrite(LOAD1_CTRL_PIN, duty_lookup(state.ch_a_current));
+    analogWrite(LOAD2_CTRL_PIN, duty_lookup(state.ch_b_current));
+
     // Wait 10ms
     last = millis();
     PT_WAIT_UNTIL(pt, millis() > (last + 10));
@@ -228,10 +203,6 @@ void app_campfire(struct pt *pt) {
   
   avg_pressure = sensor.getPressure();
 
-  // Initialize pairwise to inputs, pulled up
-  pinMode(LEFT_IO_PIN,  INPUT_PULLUP);
-  pinMode(RIGHT_IO_PIN, INPUT_PULLUP);
-
   // Initialize bus to output, driven down
   // This is because "all released" is the global sit signal
   pinMode(BUS_IO_PIN, OUTPUT);
@@ -247,11 +218,6 @@ void app_campfire(struct pt *pt) {
     // Get new pressure, calculate delta from running average
     this_pressure = sensor.getPressure();
     delta         = this_pressure - avg_pressure;
-    //Serial.print(this_pressure);
-    //Serial.print(" ");
-    //Serial.print(avg_pressure);
-    //Serial.print(" ");
-    //Serial.println(delta);
 
     // Update pressure average
     avg_pressure *= 0.98;
@@ -290,16 +256,41 @@ void app_campfire(struct pt *pt) {
 }
 
 void app_speakers(struct pt *pt) {
+
+  static uint32_t   last = 0;
+
+  static uint8_t    n_tracks = 5;
+  static uint8_t    volumes[4] = {255, 150, 50, 0};
+
+  static uint8_t    buf[3];
+
+  static uint8_t    t = 0;
+  static uint8_t    v = 0;
+  
   PT_BEGIN(pt);
+
   while (1) {
-    PT_YIELD(pt);
+
+    buf[0] = t;
+    buf[1] = volumes[v];
+    buf[2] = '\n';
+    if (buf[1] == '\n') {
+      buf[1] += 1;
+    }
+    Serial.write(buf, 3);
+
+    t++;
+    if (t == n_tracks) {
+      t = 0;
+      v++;
+      if (v == sizeof(volumes)) {
+        v = 0;
+      }
+    }
+    
+    last = millis();
+    PT_WAIT_UNTIL(pt, millis() > (last + 500));
+
   }
   PT_END(pt);
-}
-
-void update_hardware(void) {
-
-  // Actualize current PWM channels
-  analogWrite(LOAD1_CTRL_PIN, duty_lookup(state.ch_a_current));
-  analogWrite(LOAD2_CTRL_PIN, duty_lookup(state.ch_b_current));
 }
