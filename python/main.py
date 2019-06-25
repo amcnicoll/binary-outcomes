@@ -23,8 +23,9 @@ else:
 try:
     port = serial.Serial(port_string, baudrate=9600, timeout=5)
 except:
-    print('Could not open port... check USB?')
-    port = None
+    print('Could not open port... check USB? Closing out.')
+    time.sleep(1)
+    exit(-1)
 
 print('Locating tracks...')
 
@@ -72,8 +73,13 @@ while True:
     # so that we can use it as our break character here
     try:
         bites = port.read_until('\n')
-    except:
+    except Exception as e:
         print('No volume updates received')
+        if 'device disconnected' in str(e):
+            print('Port got unplugged, closing out!')
+            port.close()
+            time.sleep(1)
+            exit(-2)
         continue
 
     bites = bytearray(bites)

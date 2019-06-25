@@ -3,7 +3,7 @@ Description=Binary Outcomes Python Script
 After=network.target
 
 [Service]
-ExecStart=/usr/bin/python3 -u main.py
+ExecStart=/usr/bin/python -u main.py
 WorkingDirectory=/home/pi/binary-outcomes/python
 StandardOutput=inherit
 StandardError=inherit
