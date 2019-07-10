@@ -4,10 +4,11 @@
 
 #include "Adafruit_MPL115A2.h"
 #include "Adafruit_BMP280.h"
+#include "Adafruit_DRV2605.h"
 
 //#define SYNAPSE
-//#define CAMPFIRE
-#define SPEAKERS
+#define CAMPFIRE
+//#define SPEAKERS
 
 state_t state;
 
@@ -194,6 +195,7 @@ void app_campfire(struct pt *pt) {
   static bool       butt;
   static float      this_pressure;
   static float      delta;
+  static uint8_t    bus_count = 0;
 
   PT_BEGIN(pt);
 
@@ -240,8 +242,18 @@ void app_campfire(struct pt *pt) {
       //Serial.println("Unbutt!");
     }
 
-    // If the bus is high, drive channel B
-    if (digitalRead(BUS_IO_PIN)) {
+    #define GLOBAL_LIGHT_DELAY  1
+
+    // If the bus is high for 100 ticks (1s), drive channel B
+    if (digitalRead(BUS_IO_PIN)){
+      if (bus_count < GLOBAL_LIGHT_DELAY) {
+        bus_count++;
+      }
+    } else if (bus_count > 0) {
+      bus_count--;
+    }
+    
+    if (bus_count == GLOBAL_LIGHT_DELAY) {
       digitalWrite(LOAD2_CTRL_PIN, LOW);
     } else {
       digitalWrite(LOAD2_CTRL_PIN, HIGH);
@@ -257,7 +269,14 @@ void app_campfire(struct pt *pt) {
 
 void app_speakers(struct pt *pt) {
 
+  static Adafruit_DRV2605 drv;
+
   static uint32_t   last = 0;
+  static uint32_t   last_keepalive = 0;
+
+  static uint8_t    my_track = 2;
+  static uint8_t    my_volume = 0;
+  static uint8_t    last_volume = 0;
 
   static uint8_t    n_tracks = 5;
   static uint8_t    volumes[4] = {255, 150, 50, 0};
@@ -269,27 +288,55 @@ void app_speakers(struct pt *pt) {
   
   PT_BEGIN(pt);
 
+  // CH2 (A9) is an analog input in this configuration!
+  pinMode(A9, INPUT);
+
+  // Set buzzer driver in audio input mode
+  drv.begin();
+  drv.setMode(DRV2605_MODE_AUDIOVIBE);              // Audio input
+  drv.writeRegister8(DRV2605_REG_CONTROL1, 0x20);   // 
+  drv.writeRegister8(DRV2605_REG_CONTROL3, 0xA3);
+
+  // Full scale (255) is 1.8 Vpp for audio
+  // We only have about 100mV Vpp (really up to 200mV with volume knob)
+  // So divide by 18 - set the ATH_MAX_INPUT to 14.
+  // Also, lower the deadband - DRV2605_REG_AUDIOLVL to 3.
+  drv.writeRegister8(DRV2605_REG_AUDIOLVL, 3);
+  drv.writeRegister8(DRV2605_REG_AUDIOMAX, 14);
+
+  // Test buzz to confirm driver and motor function
+  // drv.setMode(DRV2605_MODE_REALTIME);
+  // drv.setRealtimeValue(50 );
+
   while (1) {
 
-    buf[0] = t;
-    buf[1] = volumes[v];
-    buf[2] = '\n';
-    if (buf[1] == '\n') {
-      buf[1] += 1;
+    // Calculate my volume
+    if (analogRead(A9) > 512) {
+      my_volume = 255;
+    } else {
+      my_volume = 0;
     }
-    Serial.write(buf, 3);
 
-    t++;
-    if (t == n_tracks) {
-      t = 0;
-      v++;
-      if (v == sizeof(volumes)) {
-        v = 0;
-      }
+    // Update volume change to serial if needed
+    // OR if it has been more than 3 seconds (keepalive)
+    if ( (my_volume != last_volume) || (millis() > (last_keepalive + 3000)) ) {
+
+      buf[0] = my_track;
+      buf[1] = my_volume;
+      buf[2] = '\n';
+      Serial.write(buf, 3);
+      last_keepalive = millis();
+
+      // Rate limit changes
+      last = millis();
+      PT_WAIT_UNTIL(pt, millis() > (last + 250));
     }
-    
+
+    last_volume = my_volume;
+
+    // Fast poll rate
     last = millis();
-    PT_WAIT_UNTIL(pt, millis() > (last + 500));
+    PT_WAIT_UNTIL(pt, millis() > (last + 10));
 
   }
   PT_END(pt);
