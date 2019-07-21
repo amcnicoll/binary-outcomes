@@ -87,5 +87,7 @@ while True:
     volume_byte = bites[1]
     if channel_num < len(channels):
         channels[channel_num].set_volume(volume_byte / 255.0)
+    else if channel_num = 0xCC:
+        start -= track_duration    # Sync mechanism
     else:
         print('Invalid track byte received! (%s)' % hex_string(bites))
