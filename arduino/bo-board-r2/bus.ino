@@ -73,7 +73,9 @@ void bus_thread(struct pt *pt) {
       last = millis();
       writing = 0;
       while (writing < tx_msg_len) {
-        Serial1.write(tx_msg_buffer, tx_msg_len); 
+        Serial1.write(tx_msg_buffer+writing, 1);
+        writing++;
+        while(millis() < (last + writing * 3));
       }
 
       // Wait until all characters are written

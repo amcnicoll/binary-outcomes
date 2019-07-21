@@ -1,4 +1,4 @@
-#include "decay.h"
+ #include "decay.h"
 #include "conf.h"
 #include "pt.h"
 
@@ -351,10 +351,10 @@ void app_speakers(struct pt *pt) {
     }
 
     // Serial write conditions is either
-    // - Am leader and it has been 500ms since last start, or
+    // - Am leader and it has been 200ms since last start, or
     // - Left IO is low (my turn)
 
-    if ( ( am_leader && (millis() > (last_round_time + 500))) ||
+    if ( ( am_leader && (millis() > (last_round_time + 200))) ||
          (!am_leader && (digitalRead(LEFT_IO_PIN) == LOW))) {
 
       last_round_time = millis();
@@ -386,7 +386,6 @@ void app_speakers(struct pt *pt) {
       // Wait 30ms, dumping updates to host
       last = millis();
       Serial.write(host_buf, host_buf_len);
-      Serial.write("LINE");
       PT_WAIT_UNTIL(pt, millis() > (last + 30));
       host_buf_len = 0;
 
