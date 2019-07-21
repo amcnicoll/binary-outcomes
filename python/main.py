@@ -57,14 +57,18 @@ for channel_num, track in enumerate(tracks):
 track_duration = sound.get_length()
 start = time.time() - track_duration
 
+def restart_tracks():
+    global start
+    for channel in channels:
+        channel.stop()
+    for channel, sound in zip(channels, sounds):
+        channel.play(sound)
+    start = time.time()
+
 while True:
-    if time.time() > (start + track_duration):
-        print('(Re)starting tracks...')
-        for channel in channels:
-            channel.stop()
-        for channel, sound in zip(channels, sounds):
-            channel.play(sound)
-        start = time.time()
+    if time.time() > (start + track_duration + 15):
+        print('(Re)starting tracks by failsafe...')
+        restart_tracks()
 
     if port is None:
         continue
@@ -73,6 +77,8 @@ while True:
     # so that we can use it as our break character here
     try:
         bites = port.read_until('\n')
+        if len(bites <2):
+            raise Exception('Not enough bytes')
     except Exception as e:
         print('No volume updates received')
         if 'device disconnected' in str(e):
@@ -86,8 +92,10 @@ while True:
     channel_num = bites[0]
     volume_byte = bites[1]
     if channel_num < len(channels):
+        print('Setting track %d to %d' % (channel_num, volume_byte))
         channels[channel_num].set_volume(volume_byte / 255.0)
-    else if channel_num = 0xCC:
-        start -= track_duration    # Sync mechanism
+    elif channel_num == 0xCC:
+        print('Sync event received, restarting tracks')
+        restart_tracks()
     else:
         print('Invalid track byte received! (%s)' % hex_string(bites))
