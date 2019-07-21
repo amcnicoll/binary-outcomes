@@ -45,6 +45,7 @@ void bus_tx(uint8_t* buffer, uint8_t len) {
 
 void bus_thread(struct pt *pt) {
   static uint32_t last = 0;
+  static uint8_t  writing = 0;
   
   PT_BEGIN(pt);
 
@@ -68,8 +69,12 @@ void bus_thread(struct pt *pt) {
       last = millis();
       PT_WAIT_UNTIL(pt, millis() > (last + BUS_CLAIM_MS));
 
-      // Write to serial
-      Serial1.write(tx_msg_buffer, tx_msg_len);
+      // Write to serial one byte per 3 ms
+      last = millis();
+      writing = 0;
+      while (writing < tx_msg_len) {
+        Serial1.write(tx_msg_buffer, tx_msg_len); 
+      }
 
       // Wait until all characters are written
       PT_WAIT_UNTIL(pt, Serial1.availableForWrite() == ard_buffer_size);

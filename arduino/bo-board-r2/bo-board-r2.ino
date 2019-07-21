@@ -7,8 +7,8 @@
 #include "Adafruit_DRV2605.h"
 
 //#define SYNAPSE
-#define CAMPFIRE
-//#define SPEAKERS
+//#define CAMPFIRE
+#define SPEAKERS
 
 state_t state;
 
@@ -272,24 +272,28 @@ void app_speakers(struct pt *pt) {
   static Adafruit_DRV2605 drv;
 
   static uint32_t   last = 0;
-  static uint32_t   last_keepalive = 0;
 
-  static uint8_t    my_track = 2;
+  static uint8_t    am_leader = 0;
+  static uint8_t    last_track_seen = 0;
+  static uint32_t   last_round_time = 0;
+
   static uint8_t    my_volume = 0;
-  static uint8_t    last_volume = 0;
 
-  static uint8_t    n_tracks = 5;
-  static uint8_t    volumes[4] = {255, 150, 50, 0};
-
+  static uint8_t    host_buf[256];
+  static uint8_t    host_buf_len = 0;
+  
   static uint8_t    buf[3];
-
-  static uint8_t    t = 0;
-  static uint8_t    v = 0;
+  static int        rcv = 0;
+  static uint8_t    next_is_address = 0;
   
   PT_BEGIN(pt);
 
   // CH2 (A9) is an analog input in this configuration!
   pinMode(A9, INPUT);
+
+  // Right IO is driven, start high
+  pinMode(RIGHT_IO_PIN, OUTPUT);
+  digitalWrite(RIGHT_IO_PIN, HIGH);
 
   // Set buzzer driver in audio input mode
   drv.begin();
@@ -308,36 +312,90 @@ void app_speakers(struct pt *pt) {
   // drv.setMode(DRV2605_MODE_REALTIME);
   // drv.setRealtimeValue(50 );
 
+  // If left side stays low for 50ms, you are leader
+  if (digitalRead(LEFT_IO_PIN) == LOW) {
+    last = millis();
+    PT_WAIT_UNTIL(pt, millis() > (last + 50));
+    if (digitalRead(LEFT_IO_PIN) == LOW) {
+      am_leader = 1;
+    }
+  }
+
+  // Give everyone time to boot up
+  last = millis();
+  PT_WAIT_UNTIL(pt, millis() > (last + 5000));
+
   while (1) {
 
-    // Calculate my volume
-    if (analogRead(A9) > 512) {
-      my_volume = 255;
-    } else {
-      my_volume = 0;
+    // Small yield
+    PT_YIELD(pt);
+
+    // Kludgy overrun prevention on headless systems
+    if (host_buf_len > 200) host_buf_len = 0;
+
+    // Always copy bus messages to Pi, making note of last track seen
+    rcv = Serial1.read();
+    if (rcv >= 0) {
+      host_buf[host_buf_len] = rcv;
+      host_buf_len++;
+      if (rcv == 225) {
+        digitalWrite(LOAD1_CTRL_PIN, !digitalRead(LOAD1_CTRL_PIN));
+      }
+      if (next_is_address) {
+        last_track_seen = rcv;
+        next_is_address = 0;
+      }
+      if (rcv == 0x0A) {
+        next_is_address = 1;
+      }
     }
 
-    // Update volume change to serial if needed
-    // OR if it has been more than 3 seconds (keepalive)
-    if ( (my_volume != last_volume) || (millis() > (last_keepalive + 3000)) ) {
+    // Serial write conditions is either
+    // - Am leader and it has been 500ms since last start, or
+    // - Left IO is low (my turn)
 
-      buf[0] = my_track;
+    if ( ( am_leader && (millis() > (last_round_time + 500))) ||
+         (!am_leader && (digitalRead(LEFT_IO_PIN) == LOW))) {
+
+      last_round_time = millis();
+
+      // Calculate my volume
+      if (analogRead(A9) > 512) {
+        my_volume = 255;
+      } else {
+        my_volume = 0;
+      }
+
+      // Build volume update packet
+      if (am_leader) {
+        buf[0] = 0;
+      } else {
+        buf[0] = last_track_seen + 1;
+      }
       buf[1] = my_volume;
       buf[2] = '\n';
-      Serial.write(buf, 3);
-      last_keepalive = millis();
 
-      // Rate limit changes
+      // Write to Pi
+      host_buf[host_buf_len] = buf[0]; host_buf_len++;
+      host_buf[host_buf_len] = buf[1]; host_buf_len++;
+      host_buf[host_buf_len] = buf[2]; host_buf_len++;
+
+      // Write to bus
+      bus_tx(buf, 3);
+
+      // Wait 30ms, dumping updates to host
       last = millis();
-      PT_WAIT_UNTIL(pt, millis() > (last + 250));
+      Serial.write(host_buf, host_buf_len);
+      Serial.write("LINE");
+      PT_WAIT_UNTIL(pt, millis() > (last + 30));
+      host_buf_len = 0;
+
+      // Signal next participant for 5ms
+      digitalWrite(RIGHT_IO_PIN, LOW);
+      last = millis();
+      PT_WAIT_UNTIL(pt, millis() > (last + 5));
+      digitalWrite(RIGHT_IO_PIN, HIGH);
     }
-
-    last_volume = my_volume;
-
-    // Fast poll rate
-    last = millis();
-    PT_WAIT_UNTIL(pt, millis() > (last + 10));
-
   }
   PT_END(pt);
 }
