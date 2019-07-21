@@ -17,6 +17,7 @@ if IS_WINDOWS:
     for info in port_info:
         if info.pid == PRO_MICRO_PID:
             port_string = info.device
+    print('Found Pro Micro on %s' % port_string)
 else:
     port_string = '/dev/ttyACM0'
 
@@ -77,7 +78,7 @@ while True:
     # so that we can use it as our break character here
     try:
         bites = port.read_until('\n')
-        if len(bites <2):
+        if len(bites) < 2:
             raise Exception('Not enough bytes')
     except Exception as e:
         print('No volume updates received')
@@ -92,8 +93,9 @@ while True:
     channel_num = bites[0]
     volume_byte = bites[1]
     if channel_num < len(channels):
-        print('Setting track %d to %d' % (channel_num, volume_byte))
-        channels[channel_num].set_volume(volume_byte / 255.0)
+        if channels[channel_num].get_volume() != volume_byte/255.0:
+            print('Setting track %d to %d' % (channel_num, volume_byte))
+            channels[channel_num].set_volume(volume_byte / 255.0)
     elif channel_num == 0xCC:
         print('Sync event received, restarting tracks')
         restart_tracks()

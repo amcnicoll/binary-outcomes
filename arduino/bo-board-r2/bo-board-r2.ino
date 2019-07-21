@@ -272,6 +272,8 @@ void app_speakers(struct pt *pt) {
   static Adafruit_DRV2605 drv;
 
   static uint32_t   last = 0;
+  static uint32_t   last_sync = 0;
+  static uint8_t    sync_round = 0;
 
   static uint8_t    am_leader = 0;
   static uint8_t    last_track_seen = 0;
@@ -375,6 +377,16 @@ void app_speakers(struct pt *pt) {
       buf[1] = my_volume;
       buf[2] = '\n';
 
+      // Is it time to sync (re-start tracks)?
+      // Current track is 1:50 (110 seconds, round up to 115 for 5% error)
+      if (millis() > (last_sync + 115000)) {
+        last_sync = millis();
+        buf[0] = 0xCC;
+        sync_round = 1;
+      } else {
+        sync_round = 0;
+      }
+
       // Write to Pi
       host_buf[host_buf_len] = buf[0]; host_buf_len++;
       host_buf[host_buf_len] = buf[1]; host_buf_len++;
@@ -389,11 +401,13 @@ void app_speakers(struct pt *pt) {
       PT_WAIT_UNTIL(pt, millis() > (last + 30));
       host_buf_len = 0;
 
-      // Signal next participant for 5ms
-      digitalWrite(RIGHT_IO_PIN, LOW);
-      last = millis();
-      PT_WAIT_UNTIL(pt, millis() > (last + 5));
-      digitalWrite(RIGHT_IO_PIN, HIGH);
+      // Signal next participant for 5ms, unless syncing
+      if (sync_round == 0) {
+        digitalWrite(RIGHT_IO_PIN, LOW);
+        last = millis();
+        PT_WAIT_UNTIL(pt, millis() > (last + 5));
+        digitalWrite(RIGHT_IO_PIN, HIGH);
+      }
     }
   }
   PT_END(pt);
