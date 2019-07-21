@@ -379,7 +379,7 @@ void app_speakers(struct pt *pt) {
 
       // Is it time to sync (re-start tracks)?
       // Current track is 1:50 (110 seconds, round up to 115 for 5% error)
-      if (millis() > (last_sync + 115000)) {
+      if (am_leader && (millis() > (last_sync + 115000))) {
         last_sync = millis();
         buf[0] = 0xCC;
         sync_round = 1;
