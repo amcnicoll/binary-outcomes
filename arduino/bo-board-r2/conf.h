@@ -21,7 +21,8 @@
 
 #define SYNAPSE_LATENCY_MS          500
 #define SYNAPSE_LENGTH_MS           100
-#define SYNAPSE_PRESSURE_DIFF       0.5
+#define SYNAPSE_PRESSURE_DIFF       50
+#define SYNAPSE_MUTE_DURATION       5000
 
 #define CAMPFIRE_PRESSURE_DIFF      0.5
 
@@ -37,6 +38,7 @@ typedef struct __attribute__((packed)) {
   uint32_t      synapse_off_time;
   uint8_t       synapse_leftward;
   uint8_t       synapse_rightward;
+  uint32_t      mute_end;
 } state_t;
 
 #endif

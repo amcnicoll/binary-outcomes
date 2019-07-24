@@ -1,4 +1,4 @@
- #include "decay.h"
+#include "decay.h"
 #include "conf.h"
 #include "pt.h"
 
@@ -6,9 +6,9 @@
 #include "Adafruit_BMP280.h"
 #include "Adafruit_DRV2605.h"
 
-//#define SYNAPSE
+#define SYNAPSE
 //#define CAMPFIRE
-#define SPEAKERS
+//#define SPEAKERS
 
 state_t state;
 
@@ -43,6 +43,7 @@ void setup() {
   state.synapse_off_time  = 0;
   state.synapse_leftward  = 0;
   state.synapse_rightward = 0;
+  state.mute_end          = 0;
 
   // Initialize threads
   PT_INIT(&app_thread_pt);
@@ -79,19 +80,24 @@ void app_synapse(struct pt *pt) {
 
   PT_BEGIN(pt);
 
-  // Initiailize pressure sensor
+  // Initialize pressure sensor
   sensor.begin();
 
   // Default settings from datasheet
   sensor.setSampling(Adafruit_BMP280::MODE_NORMAL,     /* Operating Mode. */
                   Adafruit_BMP280::SAMPLING_X2,     /* Temp. oversampling */
                   Adafruit_BMP280::SAMPLING_X16,    /* Pressure oversampling */
-                  Adafruit_BMP280::FILTER_X16,      /* Filtering. */
+                  Adafruit_BMP280::FILTER_OFF,      /* Filtering. */
                   Adafruit_BMP280::STANDBY_MS_500); /* Standby time. */
   
   avg_pressure = sensor.readPressure();
   
   while (1) {
+
+    // If we are past mute end, bus signal is released with pullup
+    if (millis() >= state.mute_end) {
+      pinMode(BUS_IO_PIN, INPUT_PULLUP);
+    }
 
     // Get new pressure, check if pressured
     this_pressure = sensor.readPressure();
@@ -101,14 +107,23 @@ void app_synapse(struct pt *pt) {
     avg_pressure *= 0.98;
     avg_pressure += this_pressure * 0.02;
 
+    // Debug
+    // Serial.print(this_pressure);
+    // Serial.print(", ");
+    // Serial.println(avg_pressure);
+
     // Check for activation conditions
     if (!state.activated) {
       
-      // If we have a pressure activation, generate synapse on both sides
-      if (pressured) {
+      // If we have a pressure activation and there is no mute active, 
+      // generate synapse on both sides and start mute
+      if (pressured && (digitalRead(BUS_IO_PIN) != LOW)) {
         state.activated = 1;
         state.synapse_leftward = 1;
         state.synapse_rightward = 1;
+        pinMode(BUS_IO_PIN, OUTPUT);
+        digitalWrite(BUS_IO_PIN, LOW);
+        state.mute_end = millis() + SYNAPSE_MUTE_DURATION;
       }
 
       // If we have left synapse, propagate to right
