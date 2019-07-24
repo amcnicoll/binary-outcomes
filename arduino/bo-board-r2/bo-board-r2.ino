@@ -10,6 +10,8 @@
 //#define CAMPFIRE
 //#define SPEAKERS
 
+//#define FLICKER
+
 state_t state;
 
 static struct pt app_thread_pt, bus_thread_pt;
@@ -53,20 +55,20 @@ void setup() {
 void loop() {
 
   // Service app thread
-  #ifdef SYNAPSE
+#ifdef SYNAPSE
   app_synapse(&app_thread_pt);
-  #endif
-  #ifdef CAMPFIRE
+#endif
+#ifdef CAMPFIRE
   app_campfire(&app_thread_pt);
-  #endif
-  #ifdef SPEAKERS
+#endif
+#ifdef SPEAKERS
   app_speakers(&app_thread_pt);
-  #endif
+#endif
 
   // Service bus thread
-  #ifdef SPEAKERS
+#ifdef SPEAKERS
   bus_thread(&bus_thread_pt);
-  #endif
+#endif
 }
 
 void app_synapse(struct pt *pt) {
@@ -78,6 +80,15 @@ void app_synapse(struct pt *pt) {
   static bool       pressured;
   static float      this_pressure;
 
+  static uint8_t flicker_table[20] = {255, 255, 255, 255, 255,
+                                      255, 255, 255, 255, 255,
+                                      200, 0,   0,   200, 200,
+                                      0,   0,   0,   0,   255
+                                     };
+  static uint32_t flicker_table_idx;
+
+  static uint16_t duty_to_write;
+
   PT_BEGIN(pt);
 
   // Initialize pressure sensor
@@ -85,13 +96,13 @@ void app_synapse(struct pt *pt) {
 
   // Default settings from datasheet
   sensor.setSampling(Adafruit_BMP280::MODE_NORMAL,     /* Operating Mode. */
-                  Adafruit_BMP280::SAMPLING_X2,     /* Temp. oversampling */
-                  Adafruit_BMP280::SAMPLING_X16,    /* Pressure oversampling */
-                  Adafruit_BMP280::FILTER_OFF,      /* Filtering. */
-                  Adafruit_BMP280::STANDBY_MS_500); /* Standby time. */
-  
+                     Adafruit_BMP280::SAMPLING_X2,     /* Temp. oversampling */
+                     Adafruit_BMP280::SAMPLING_X16,    /* Pressure oversampling */
+                     Adafruit_BMP280::FILTER_OFF,      /* Filtering. */
+                     Adafruit_BMP280::STANDBY_MS_500); /* Standby time. */
+
   avg_pressure = sensor.readPressure();
-  
+
   while (1) {
 
     // If we are past mute end, bus signal is released with pullup
@@ -114,8 +125,8 @@ void app_synapse(struct pt *pt) {
 
     // Check for activation conditions
     if (!state.activated) {
-      
-      // If we have a pressure activation and there is no mute active, 
+
+      // If we have a pressure activation and there is no mute active,
       // generate synapse on both sides and start mute
       if (pressured && (digitalRead(BUS_IO_PIN) != LOW)) {
         state.activated = 1;
@@ -143,9 +154,10 @@ void app_synapse(struct pt *pt) {
         state.ch_a_target = UINT16_MAX;
         state.synapse_on_time = millis() + SYNAPSE_LATENCY_MS;
         state.synapse_off_time = state.synapse_on_time + SYNAPSE_LENGTH_MS;
+        flicker_table_idx = 0;
       }
     }
-  
+
     // Update fade up
     if (state.ch_a_target > state.ch_a_current) {
       if (UINT16_MAX - state.ch_a_current < LED_FADE_RATE) {
@@ -155,7 +167,7 @@ void app_synapse(struct pt *pt) {
         state.ch_a_current += LED_FADE_RATE;
       }
 
-    // Update fade down
+      // Update fade down
     } else if (state.ch_a_target < state.ch_a_current) {
       if (state.ch_a_current < LED_FADE_RATE) {
         state.ch_a_current = 0;
@@ -189,9 +201,23 @@ void app_synapse(struct pt *pt) {
     // Mirror channels
     state.ch_b_current = state.ch_a_current;
 
-    // Actualize current PWM channels
-    analogWrite(LOAD1_CTRL_PIN, duty_lookup(state.ch_a_current));
-    analogWrite(LOAD2_CTRL_PIN, duty_lookup(state.ch_b_current));
+    // Calculate PWM to set
+    duty_to_write = duty_lookup(state.ch_a_current);
+
+    // Superimpose flicker
+    #ifdef FLICKER
+    if (millis() > state.synapse_on_time && flicker_table_idx < sizeof(flicker_table)) {
+      flicker_table_idx = (millis() - state.synapse_on_time) >> 6;
+      duty_to_write = (duty_to_write * flicker_table[flicker_table_idx]) >> 8;
+    }
+    #endif
+
+    // Write PWM
+    //Serial.print(flicker_table_idx);
+    //Serial.print(", ");
+    //Serial.println(duty_to_write);
+    analogWrite(LOAD1_CTRL_PIN, duty_to_write);
+    analogWrite(LOAD2_CTRL_PIN, duty_to_write);
 
     // Wait 10ms
     last = millis();
@@ -217,7 +243,7 @@ void app_campfire(struct pt *pt) {
   // Initiailize pressure sensor
   sensor = Adafruit_MPL115A2();
   sensor.begin();
-  
+
   avg_pressure = sensor.getPressure();
 
   // Initialize bus to output, driven down
@@ -229,7 +255,7 @@ void app_campfire(struct pt *pt) {
   butt = false;
   digitalWrite(LOAD1_CTRL_PIN, HIGH);
   digitalWrite(LOAD2_CTRL_PIN, HIGH);
-  
+
   while (1) {
 
     // Get new pressure, calculate delta from running average
@@ -257,17 +283,17 @@ void app_campfire(struct pt *pt) {
       //Serial.println("Unbutt!");
     }
 
-    #define GLOBAL_LIGHT_DELAY  1
+#define GLOBAL_LIGHT_DELAY  1
 
     // If the bus is high for 100 ticks (1s), drive channel B
-    if (digitalRead(BUS_IO_PIN)){
+    if (digitalRead(BUS_IO_PIN)) {
       if (bus_count < GLOBAL_LIGHT_DELAY) {
         bus_count++;
       }
     } else if (bus_count > 0) {
       bus_count--;
     }
-    
+
     if (bus_count == GLOBAL_LIGHT_DELAY) {
       digitalWrite(LOAD2_CTRL_PIN, LOW);
     } else {
@@ -298,11 +324,11 @@ void app_speakers(struct pt *pt) {
 
   static uint8_t    host_buf[256];
   static uint8_t    host_buf_len = 0;
-  
+
   static uint8_t    buf[3];
   static int        rcv = 0;
   static uint8_t    next_is_address = 0;
-  
+
   PT_BEGIN(pt);
 
   // CH2 (A9) is an analog input in this configuration!
@@ -315,7 +341,7 @@ void app_speakers(struct pt *pt) {
   // Set buzzer driver in audio input mode
   drv.begin();
   drv.setMode(DRV2605_MODE_AUDIOVIBE);              // Audio input
-  drv.writeRegister8(DRV2605_REG_CONTROL1, 0x20);   // 
+  drv.writeRegister8(DRV2605_REG_CONTROL1, 0x20);   //
   drv.writeRegister8(DRV2605_REG_CONTROL3, 0xA3);
 
   // Full scale (255) is 1.8 Vpp for audio
