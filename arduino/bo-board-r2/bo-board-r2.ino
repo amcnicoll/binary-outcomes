@@ -6,11 +6,13 @@
 #include "Adafruit_BMP280.h"
 #include "Adafruit_DRV2605.h"
 
-#define SYNAPSE
-//#define CAMPFIRE
+//#define SYNAPSE
+#define CAMPFIRE
 //#define SPEAKERS
 
-//#define FLICKER
+#define FLICKER
+
+#define SERIAL_DEBUG
 
 state_t state;
 
@@ -91,6 +93,10 @@ void app_synapse(struct pt *pt) {
 
   PT_BEGIN(pt);
 
+  #ifdef SERIAL_DEBUG
+  Serial.println("Initializing Sensor");
+  #endif
+
   // Initialize pressure sensor
   sensor.begin();
 
@@ -102,6 +108,11 @@ void app_synapse(struct pt *pt) {
                      Adafruit_BMP280::STANDBY_MS_500); /* Standby time. */
 
   avg_pressure = sensor.readPressure();
+
+  #ifdef SERIAL_DEBUG
+  Serial.println("Starting Synapse");
+  Serial.println("Printing pressures...");
+  #endif
 
   while (1) {
 
@@ -119,9 +130,17 @@ void app_synapse(struct pt *pt) {
     avg_pressure += this_pressure * 0.02;
 
     // Debug
-    // Serial.print(this_pressure);
-    // Serial.print(", ");
-    // Serial.println(avg_pressure);
+    #ifdef SERIAL_DEBUG
+    Serial.print(this_pressure);
+    Serial.print(", ");
+    Serial.print(avg_pressure);
+    Serial.print(", ");
+    if (state.activated) {
+      Serial.println(98070);
+    } else {
+      Serial.println(98050);
+    }
+    #endif
 
     // Check for activation conditions
     if (!state.activated) {
@@ -235,6 +254,7 @@ void app_campfire(struct pt *pt) {
   static uint32_t   last = 0;
   static bool       butt;
   static float      this_pressure;
+  static float      this_pressure_smooth;
   static float      delta;
   static uint8_t    bus_count = 0;
 
@@ -260,11 +280,23 @@ void app_campfire(struct pt *pt) {
 
     // Get new pressure, calculate delta from running average
     this_pressure = sensor.getPressure();
-    delta         = this_pressure - avg_pressure;
+
+    // Smooth this pressure
+    this_pressure_smooth *= 0.75;
+    this_pressure_smooth += this_pressure * 0.25;
 
     // Update pressure average
     avg_pressure *= 0.98;
     avg_pressure += this_pressure * 0.02;
+
+    delta = this_pressure_smooth - avg_pressure;
+
+    // Debug
+    #ifdef SERIAL_DEBUG
+    //Serial.print(this_pressure_smooth);
+    //Serial.print(", ");
+    Serial.println(10*delta);
+    #endif
 
     // If we are passing from non-butt to butt, enable channel A, release bus
     if ((!butt) && (delta > CAMPFIRE_PRESSURE_DIFF)) {
@@ -283,9 +315,7 @@ void app_campfire(struct pt *pt) {
       //Serial.println("Unbutt!");
     }
 
-#define GLOBAL_LIGHT_DELAY  1
-
-    // If the bus is high for 100 ticks (1s), drive channel B
+    // If the bus is high for some amount of delay ticks, drive channel B
     if (digitalRead(BUS_IO_PIN)) {
       if (bus_count < GLOBAL_LIGHT_DELAY) {
         bus_count++;

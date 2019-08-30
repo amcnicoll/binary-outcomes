@@ -24,7 +24,8 @@
 #define SYNAPSE_PRESSURE_DIFF       50
 #define SYNAPSE_MUTE_DURATION       5000
 
-#define CAMPFIRE_PRESSURE_DIFF      0.5
+#define CAMPFIRE_PRESSURE_DIFF      0.35
+#define GLOBAL_LIGHT_DELAY          1
 
 typedef struct __attribute__((packed)) {
   uint8_t       address;
