@@ -1,6 +1,11 @@
+// --- Bus layer configuration
+#define BUS_CLAIM_MS    5
+#define BUS_CLEAN_MS    2
 
 uint8_t* tx_msg_buffer;
 uint8_t  tx_msg_len;
+
+uint8_t   bus_initialized = 0;
 
 int      ard_buffer_size;
 
@@ -26,6 +31,8 @@ void bus_init(void) {
   // Release bus and set RX
   pinMode(BUS_IO_PIN, INPUT_PULLUP);
   bus_set_rx();
+
+  bus_initialized = 1;
 }
 
 void bus_set_tx(void) {
@@ -48,11 +55,13 @@ void bus_thread(struct pt *pt) {
   static uint8_t  writing = 0;
   
   PT_BEGIN(pt);
-
-  // Initialize bus
-  bus_init();
   
   while (1) {
+
+    if (!bus_initialized) {
+      PT_YIELD(pt);
+      continue;
+    }
 
     // Do we have something to send?
     if (tx_msg_len > 0) {
