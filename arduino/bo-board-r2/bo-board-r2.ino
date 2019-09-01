@@ -3,8 +3,8 @@
 
 // --- Application selection
 //#define IMPULSE
-#define CAMPFIRE
-//#define OUTCOMES
+//#define CAMPFIRE
+#define OUTCOMES
 
 // --- Pins
 #define RX_PIN          0

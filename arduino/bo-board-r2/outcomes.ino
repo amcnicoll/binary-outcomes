@@ -97,11 +97,13 @@ void app_outcomes(struct pt *pt) {
 
       last_round_time = millis();
 
-      // Calculate my volume
+      // Calculate my volume, apply to buzzer
       if (analogRead(A9) > 512) {
         my_volume = 255;
+        drv.writeRegister8(DRV2605_REG_AUDIOLVL, 3);
       } else {
         my_volume = 0;
+        drv.writeRegister8(DRV2605_REG_AUDIOLVL, 200);
       }
 
       // Build volume update packet
