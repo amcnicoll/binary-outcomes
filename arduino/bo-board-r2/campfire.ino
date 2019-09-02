@@ -23,13 +23,16 @@ void app_campfire(struct pt *pt) {
 
   // Initialize bus
   bus_init();
+  Serial.println("Bus initialized");
 
   // Initialize byteshare protocol
   byteshare_init(200, 3);
+  Serial.println("Byteshare initialized");
 
   // Initialize pressure sensor
   sensor = Adafruit_MPL115A2();
   sensor.begin();
+  Serial.println("Sensor initialized");
 
   avg_pressure = sensor.getPressure();
 
@@ -40,7 +43,7 @@ void app_campfire(struct pt *pt) {
     // Global: either no butts or all butts
     all_butts = byteshare_array();
     if ( (all_butts[0] + all_butts[1] + all_butts[2] == 0) ||
-         (all_butts[0] + all_butts[1] + all_butts[2] == 3) ) {
+         (all_butts[0] + all_butts[1] + all_butts[2] == bnm) ) {
       digitalWrite(LOAD2_CTRL_PIN, LOW);
     } else {
       digitalWrite(LOAD2_CTRL_PIN, HIGH);

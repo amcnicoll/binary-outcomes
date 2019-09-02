@@ -12,7 +12,8 @@ uint8_t my_byte     = 0;
 uint8_t shared_bytes[16];
 
 uint32_t  bsp       = 9999999;
-uint8_t   bnm       = 16;
+uint8_t   bnm       = 1;
+uint8_t   bnm_max   = 1;
 
 uint8_t am_leader   = 0;
 uint8_t addr_last   = 0;
@@ -20,18 +21,16 @@ uint8_t addr        = 0;
 
 uint8_t byteshare_initialized = 0;
 
-void byteshare_init(uint32_t ms_period, uint8_t n_members) {
+void byteshare_init(uint32_t ms_period, uint8_t max_members) {
 
   uint32_t last = 0;
 
   // Assume bus layer is initialized separately
 
   // Copy config vars
-  bsp = ms_period;
-  bnm = n_members;
-  for (uint8_t i=0; i<n_members; i++) {
-    shared_bytes[i] = 0;
-  }
+  bsp     = ms_period;
+  bnm_max = max_members;
+  memset(shared_bytes, 0, sizeof(shared_bytes));
 
   // Right IO is driven, start high
   pinMode(RIGHT_IO_PIN, OUTPUT);
@@ -74,12 +73,14 @@ void byteshare_thread(struct pt *pt) {
 
   PT_BEGIN(pt);
 
-  while (1) {
-
-  if (!bus_initialized) {
+  while (!byteshare_initialized) {
     PT_YIELD(pt);
     continue;
   }
+
+  Serial.println("Byteshare thread running");
+
+  while (1) {
 
   // Send our byte if either
   //     We are leader and it is update time
@@ -88,17 +89,18 @@ void byteshare_thread(struct pt *pt) {
        (!am_leader && (digitalRead(LEFT_IO_PIN) == LOW))) { 
 
     #ifdef BYTESHARE_DEBUG
-    Serial.println("Sending our byteshare packet");
-    Serial.print("Currently ");
-    Serial.print(shared_bytes[0]); Serial.print(", ");
-    Serial.print(shared_bytes[1]); Serial.print(", ");
-    Serial.println(shared_bytes[2]);
+    Serial.print("Updating byteshare (");
+    for (uint8_t i=0; i<bnm; i++) {
+      Serial.print(shared_bytes[i]); Serial.print(" ");
+    }
+    Serial.println(")");
     #endif
 
     last_round_time = millis();
 
     if (!am_leader) {
       addr = addr_last + 1;
+      if (addr + 1 > bnm) bnm = addr + 1;
     }
 
     out_buffer[0] = SOF_BYTE;
@@ -129,13 +131,14 @@ void byteshare_thread(struct pt *pt) {
 
     else if (in_len == 1) {
       in_addr = res;
-      if (res < bnm)  in_len = 2;
-      else            in_len = 0;
+      if (res < bnm_max)  in_len = 2;
+      else                in_len = 0;
     }
 
     else if (in_len == 2) {
       shared_bytes[in_addr] = res;
       addr_last = in_addr;
+      if (addr_last + 1 > bnm) bnm = addr_last + 1;
       in_len = 0;
       #ifdef BYTESHARE_DEBUG
       Serial.print("Got "); Serial.print(res); Serial.print(" from "); Serial.println(in_addr);
